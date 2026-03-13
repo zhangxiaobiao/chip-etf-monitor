@@ -1,0 +1,264 @@
+# 股票监控项目结构模板
+
+## 目录结构
+```
+stock-monitor-project/
+├── app.py                 # Streamlit Web界面
+├── monitor.py             # 后台监控服务
+├── analyzer.py            # 数据分析工具
+├── run.py                 # 统一启动脚本
+├── config.py              # 配置文件
+├── data_fetcher.py        # 数据获取模块
+├── signals.py             # 信号生成模块
+├── utils.py               # 工具函数
+├── requirements.txt       # Python依赖
+├── .env.example           # 环境变量模板
+├── README.md              # 项目文档
+├── start_project.bat      # Windows启动脚本
+├── start_project.sh       # Linux/Mac启动脚本
+├── data_cache/            # 数据缓存目录
+└── analysis_output/       # 分析输出目录
+```
+
+## 文件说明
+
+### 核心文件
+1. **app.py** - Web监控界面
+   - 实时行情显示
+   - 技术图表展示
+   - 交互式参数配置
+   - 信号仪表盘
+
+2. **monitor.py** - 后台监控服务
+   - 定时数据获取
+   - 自动信号生成
+   - 价格警报发送
+   - 系统状态监控
+
+3. **analyzer.py** - 数据分析工具
+   - 历史数据回测
+   - 技术指标计算
+   - 报告生成
+   - 图表导出
+
+4. **config.py** - 配置管理
+   - 股票代码配置
+   - 监控参数设置
+   - 技术指标参数
+   - 通知系统配置
+
+### 模块文件
+5. **data_fetcher.py** - 数据获取
+   - Yahoo Finance API集成
+   - 实时数据获取
+   - 历史数据下载
+   - 数据缓存机制
+
+6. **signals.py** - 信号生成
+   - 技术指标计算
+   - 买卖信号生成
+   - 风险等级评估
+   - 投资建议生成
+
+7. **utils.py** - 工具函数
+   - 数据可视化
+   - 通知管理
+   - 数据处理
+   - 报告生成
+
+### 配置和文档
+8. **requirements.txt** - 依赖包列表
+   - Pandas, NumPy - 数据处理
+   - yfinance - 数据获取
+   - ta - 技术指标
+   - streamlit, plotly - 可视化
+   - python-telegram-bot - 通知
+
+9. **.env.example** - 环境变量模板
+   - Telegram Bot配置
+   - 监控参数设置
+   - 技术指标参数
+
+10. **README.md** - 项目文档
+    - 安装指南
+    - 使用说明
+    - 配置说明
+    - 故障排除
+
+### 启动脚本
+11. **run.py** - 统一启动脚本
+    - 环境检查
+    - 依赖安装
+    - 功能选择
+    - 系统启动
+
+12. **start_project.bat** - Windows启动
+    - 环境检测
+    - 菜单选择
+    - 自动启动
+
+13. **start_project.sh** - Linux/Mac启动
+    - 环境检查
+    - 权限设置
+    - 服务启动
+
+### 数据目录
+14. **data_cache/** - 数据缓存
+    - 实时数据缓存
+    - 历史数据缓存
+    - 缓存清理机制
+
+15. **analysis_output/** - 分析输出
+    - 图表文件
+    - 报告文档
+    - 统计数据
+
+## 快速创建命令
+
+### Python脚本创建
+```bash
+python create_monitor_project.py
+```
+
+### 手动创建
+```bash
+# 创建项目目录
+mkdir my-stock-monitor
+cd my-stock-monitor
+
+# 创建核心文件
+touch app.py monitor.py analyzer.py config.py
+touch data_fetcher.py signals.py utils.py run.py
+touch requirements.txt .env.example README.md
+
+# 创建数据目录
+mkdir data_cache analysis_output
+
+# 创建启动脚本
+# Windows
+echo @echo off > start_project.bat
+# Linux/Mac
+echo "#!/bin/bash" > start_project.sh
+chmod +x start_project.sh
+```
+
+## 依赖安装
+
+### 基础依赖
+```bash
+pip install pandas numpy yfinance ta
+```
+
+### 可视化依赖
+```bash
+pip install streamlit plotly
+```
+
+### 通知依赖
+```bash
+pip install python-telegram-bot schedule python-dotenv requests tqdm
+```
+
+### 完整安装
+```bash
+pip install -r requirements.txt
+```
+
+## 配置文件示例
+
+### config.py 基础配置
+```python
+# 股票配置
+STOCK_SYMBOL = "588200.SS"
+STOCK_NAME = "科创芯片ETF"
+
+# 监控配置
+MONITORING_INTERVAL = 60  # 秒
+ALERT_THRESHOLD = 2.0     # %
+CHECK_HISTORY_DAYS = 30   # 天
+
+# 技术指标配置
+RSI_OVERBOUGHT = 70
+RSI_OVERSOLD = 30
+MACD_SIGNAL = 9
+MACD_FAST = 12
+MACD_SLOW = 26
+BBANDS_PERIOD = 20
+BBANDS_STD = 2.0
+```
+
+### .env 环境变量
+```bash
+# Telegram配置
+TELEGRAM_BOT_TOKEN=your_token_here
+TELEGRAM_CHAT_ID=your_chat_id_here
+
+# 监控配置
+STOCK_SYMBOL=588200.SS
+MONITORING_INTERVAL=60
+ALERT_THRESHOLD=2.0
+CHECK_HISTORY_DAYS=30
+```
+
+## 启动方式
+
+### Web界面
+```bash
+streamlit run app.py
+```
+
+### 后台监控
+```bash
+python monitor.py
+```
+
+### 数据分析
+```bash
+python analyzer.py
+```
+
+### 统一启动
+```bash
+python run.py
+# 或
+./start_project.bat  # Windows
+./start_project.sh   # Linux/Mac
+```
+
+## 自定义修改
+
+### 修改股票代码
+1. 编辑 `config.py` 中的 `STOCK_SYMBOL`
+2. 更新 `STOCK_NAME`
+3. 重启系统
+
+### 调整监控频率
+1. 修改 `MONITORING_INTERVAL` 参数
+2. 调整 `ALERT_THRESHOLD` 阈值
+3. 更新技术指标参数
+
+### 添加新功能
+1. 在相应模块中添加新函数
+2. 在配置文件中添加参数
+3. 在界面中添加显示组件
+
+## 维护建议
+
+### 定期更新
+1. 更新依赖包版本
+2. 检查API兼容性
+3. 优化代码性能
+
+### 数据清理
+1. 定期清理缓存数据
+2. 备份重要数据
+3. 监控存储空间
+
+### 系统监控
+1. 检查日志文件
+2. 监控系统资源
+3. 验证数据准确性
+
+---
+*模板版本: 1.0.0*
+*生成时间: 2024年*

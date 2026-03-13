@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 项目特定
+data_cache/*.csv
+data_cache/*.json
+data_cache/*.pkl
+analysis_output/*
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# WorkBuddy技能包缓存
+.codebuddy/cache/
+
+# 日志文件
+*.log
+logs/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 临时文件
+*.tmp
+*.temp
+~*
+
+# 测试输出
+.coverage
+htmlcov/
+.pytest_cache/
+
+# 文档生成
+docs/_build/
