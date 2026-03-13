@@ -1,237 +1,231 @@
-import yfinance as yf
 import pandas as pd
 import numpy as np
 import os
 import time
 import pickle
 from datetime import datetime, timedelta
-from typing import Dict, Optional, Tuple
-import requests
+from typing import Dict, Optional
 from config import STOCK_SYMBOL, CHECK_HISTORY_DAYS, DATA_CACHE_DIR, DATA_CACHE_TTL
 
+# 股票代码处理：去掉 .SS / .SZ 后缀，只保留6位数字
+def _pure_code(symbol: str) -> str:
+    return symbol.split('.')[0]
+
 class DataFetcher:
-    """股票数据获取器"""
-    
+    """股票数据获取器（基于 akshare，专为中国 A 股 / ETF 设计）"""
+
     def __init__(self, symbol: str = STOCK_SYMBOL):
         self.symbol = symbol
-        self.ticker = yf.Ticker(symbol)
+        self.code = _pure_code(symbol)   # 例: "588200"
         self.cache_dir = DATA_CACHE_DIR
-        
-        # 创建缓存目录
+
         if not os.path.exists(self.cache_dir):
             os.makedirs(self.cache_dir)
-    
-    def get_cache_file(self, data_type: str) -> str:
-        """获取缓存文件路径"""
-        return os.path.join(self.cache_dir, f"{self.symbol}_{data_type}.pkl")
-    
-    def is_cache_valid(self, cache_file: str, ttl: int = DATA_CACHE_TTL) -> bool:
-        """检查缓存是否有效"""
-        if not os.path.exists(cache_file):
+
+    # ──────────────────────────────
+    # 缓存工具
+    # ──────────────────────────────
+    def _cache_path(self, key: str) -> str:
+        return os.path.join(self.cache_dir, f"{self.code}_{key}.pkl")
+
+    def _cache_valid(self, key: str, ttl: int = DATA_CACHE_TTL) -> bool:
+        path = self._cache_path(key)
+        if not os.path.exists(path):
             return False
-        
-        file_mtime = os.path.getmtime(cache_file)
-        current_time = time.time()
-        return (current_time - file_mtime) < ttl
-    
-    def save_to_cache(self, data, data_type: str):
-        """保存数据到缓存"""
-        cache_file = self.get_cache_file(data_type)
-        with open(cache_file, 'wb') as f:
-            pickle.dump({
-                'data': data,
-                'timestamp': datetime.now()
-            }, f)
-    
-    def load_from_cache(self, data_type: str):
-        """从缓存加载数据"""
-        cache_file = self.get_cache_file(data_type)
-        if os.path.exists(cache_file):
-            with open(cache_file, 'rb') as f:
-                cached = pickle.load(f)
-                return cached['data']
+        return (time.time() - os.path.getmtime(path)) < ttl
+
+    def _save_cache(self, data, key: str):
+        with open(self._cache_path(key), 'wb') as f:
+            pickle.dump({'data': data, 'ts': datetime.now()}, f)
+
+    def _load_cache(self, key: str):
+        path = self._cache_path(key)
+        if os.path.exists(path):
+            with open(path, 'rb') as f:
+                return pickle.load(f)['data']
         return None
-    
+
+    # ──────────────────────────────
+    # 实时行情
+    # ──────────────────────────────
     def get_realtime_data(self) -> Dict:
-        """获取实时行情数据"""
+        """获取实时行情（akshare fund_etf_spot_em）"""
         try:
-            # 获取实时数据
-            data = self.ticker.info
-            
-            # 获取当前价格
-            history = self.ticker.history(period='1d', interval='1m')
-            if not history.empty:
-                latest_price = history['Close'].iloc[-1]
-                prev_close = history['Close'].iloc[0] if len(history) > 1 else latest_price
-                
-                change = latest_price - prev_close
-                change_percent = (change / prev_close * 100) if prev_close != 0 else 0
-                
-                realtime_data = {
-                    'symbol': self.symbol,
-                    'price': round(latest_price, 3),
-                    'prev_close': round(prev_close, 3),
-                    'change': round(change, 3),
-                    'change_percent': round(change_percent, 2),
-                    'volume': int(history['Volume'].sum()) if 'Volume' in history.columns else 0,
-                    'high': round(history['High'].max(), 3) if 'High' in history.columns else latest_price,
-                    'low': round(history['Low'].min(), 3) if 'Low' in history.columns else latest_price,
-                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    'open': round(history['Open'].iloc[0], 3) if 'Open' in history.columns else latest_price
-                }
-                
-                # 添加基本信息
-                if 'marketCap' in data:
-                    realtime_data['market_cap'] = data['marketCap']
-                if 'volume' in data:
-                    realtime_data['avg_volume'] = data['volume']
-                if 'fiftyTwoWeekHigh' in data:
-                    realtime_data['52w_high'] = data['fiftyTwoWeekHigh']
-                if 'fiftyTwoWeekLow' in data:
-                    realtime_data['52w_low'] = data['fiftyTwoWeekLow']
-                
-                return realtime_data
-            else:
-                # 如果无法获取分钟数据，使用日数据
-                return self.get_daily_data()
-                
-        except Exception as e:
-            print(f"获取实时数据失败: {e}")
-            return self.get_fallback_data()
-    
-    def get_daily_data(self) -> Dict:
-        """获取日线数据（备用）"""
-        try:
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=1)
-            
-            history = self.ticker.history(start=start_date, end=end_date)
-            if not history.empty:
-                latest_price = history['Close'].iloc[-1]
-                prev_close = history['Close'].iloc[0] if len(history) > 1 else latest_price
-                
-                change = latest_price - prev_close
-                change_percent = (change / prev_close * 100) if prev_close != 0 else 0
-                
-                return {
-                    'symbol': self.symbol,
-                    'price': round(latest_price, 3),
-                    'prev_close': round(prev_close, 3),
-                    'change': round(change, 3),
-                    'change_percent': round(change_percent, 2),
-                    'volume': int(history['Volume'].iloc[-1]) if 'Volume' in history.columns else 0,
-                    'high': round(history['High'].iloc[-1], 3) if 'High' in history.columns else latest_price,
-                    'low': round(history['Low'].iloc[-1], 3) if 'Low' in history.columns else latest_price,
-                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    'open': round(history['Open'].iloc[-1], 3) if 'Open' in history.columns else latest_price
-                }
-        except Exception as e:
-            print(f"获取日线数据失败: {e}")
-        
-        return self.get_fallback_data()
-    
-    def get_fallback_data(self) -> Dict:
-        """获取降级数据（当所有API都失败时）"""
-        return {
-            'symbol': self.symbol,
-            'price': 0.0,
-            'prev_close': 0.0,
-            'change': 0.0,
-            'change_percent': 0.0,
-            'volume': 0,
-            'high': 0.0,
-            'low': 0.0,
-            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'open': 0.0,
-            'error': '数据获取失败'
-        }
-    
-    def get_historical_data(self, days: int = CHECK_HISTORY_DAYS) -> pd.DataFrame:
-        """获取历史数据"""
-        cache_key = f"history_{days}d"
-        
-        # 检查缓存
-        if self.is_cache_valid(self.get_cache_file(cache_key)):
-            cached_data = self.load_from_cache(cache_key)
-            if cached_data is not None:
-                return cached_data
-        
-        try:
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=days)
-            
-            # 获取历史数据
-            history = self.ticker.history(start=start_date, end=end_date)
-            
-            if not history.empty:
-                # 清理数据
-                history = history[['Open', 'High', 'Low', 'Close', 'Volume']]
-                history.columns = ['open', 'high', 'low', 'close', 'volume']
-                
-                # 保存到缓存
-                self.save_to_cache(history, cache_key)
-                
-                return history
-            else:
-                print("获取历史数据为空")
-                return pd.DataFrame()
-                
-        except Exception as e:
-            print(f"获取历史数据失败: {e}")
-            return pd.DataFrame()
-    
-    def get_intraday_data(self, interval: str = '5m', days: int = 5) -> pd.DataFrame:
-        """获取日内数据"""
-        cache_key = f"intraday_{interval}_{days}d"
-        
-        # 检查缓存
-        if self.is_cache_valid(self.get_cache_file(cache_key)):
-            cached_data = self.load_from_cache(cache_key)
-            if cached_data is not None:
-                return cached_data
-        
-        try:
-            # 获取日内数据
-            history = self.ticker.history(period=f'{days}d', interval=interval)
-            
-            if not history.empty:
-                # 清理数据
-                history = history[['Open', 'High', 'Low', 'Close', 'Volume']]
-                history.columns = ['open', 'high', 'low', 'close', 'volume']
-                
-                # 保存到缓存
-                self.save_to_cache(history, cache_key)
-                
-                return history
-            else:
-                print("获取日内数据为空")
-                return pd.DataFrame()
-                
-        except Exception as e:
-            print(f"获取日内数据失败: {e}")
-            return pd.DataFrame()
-    
-    def get_stock_info(self) -> Dict:
-        """获取股票基本信息"""
-        try:
-            info = self.ticker.info
-            
-            basic_info = {
-                'symbol': self.symbol,
-                'name': info.get('longName', ''),
-                'sector': info.get('sector', ''),
-                'industry': info.get('industry', ''),
-                'market_cap': info.get('marketCap', 0),
-                'pe_ratio': info.get('trailingPE', 0),
-                'pb_ratio': info.get('priceToBook', 0),
-                'dividend_yield': info.get('dividendYield', 0),
-                'avg_volume': info.get('averageVolume', 0),
-                '52w_high': info.get('fiftyTwoWeekHigh', 0),
-                '52w_low': info.get('fiftyTwoWeekLow', 0),
-                'beta': info.get('beta', 0)
+            import akshare as ak
+            df = ak.fund_etf_spot_em()
+            row = df[df['代码'] == self.code]
+            if row.empty:
+                raise ValueError(f"未找到代码 {self.code}")
+
+            r = row.iloc[0]
+            price      = float(r.get('最新价', 0) or 0)
+            prev_close = float(r.get('昨收', 0) or price)
+            change     = round(price - prev_close, 4)
+            chg_pct    = round(change / prev_close * 100, 2) if prev_close else 0
+
+            return {
+                'symbol':         self.symbol,
+                'price':          round(price, 4),
+                'prev_close':     round(prev_close, 4),
+                'change':         change,
+                'change_percent': chg_pct,
+                'volume':         int(float(r.get('成交量', 0) or 0)),
+                'high':           float(r.get('最高', price) or price),
+                'low':            float(r.get('最低', price) or price),
+                'open':           float(r.get('今开', price) or price),
+                'timestamp':      datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             }
-            
-            return basic_info
         except Exception as e:
-            print(f"获取股票信息失败: {e}")
-            return {}
+            print(f"[akshare 实时] 获取失败: {e}")
+            return self._fallback()
+
+    # ──────────────────────────────
+    # 历史数据
+    # ──────────────────────────────
+    def get_historical_data(self, days: int = CHECK_HISTORY_DAYS) -> pd.DataFrame:
+        """获取日线历史数据（akshare fund_etf_hist_em）"""
+        key = f"history_{days}d"
+
+        if self._cache_valid(key):
+            cached = self._load_cache(key)
+            if cached is not None:
+                return cached
+
+        try:
+            import akshare as ak
+            end   = datetime.now()
+            start = end - timedelta(days=days + 10)   # 多取几天保证够用
+
+            df = ak.fund_etf_hist_em(
+                symbol=self.code,
+                period="daily",
+                start_date=start.strftime('%Y%m%d'),
+                end_date=end.strftime('%Y%m%d'),
+                adjust="qfq"           # 前复权
+            )
+
+            if df.empty:
+                raise ValueError("历史数据为空")
+
+            df = df.rename(columns={
+                '日期': 'date',
+                '开盘': 'open',
+                '收盘': 'close',
+                '最高': 'high',
+                '最低': 'low',
+                '成交量': 'volume',
+            })
+            df['date'] = pd.to_datetime(df['date'])
+            df = df.set_index('date')[['open', 'high', 'low', 'close', 'volume']]
+            df = df.sort_index().tail(days)
+
+            self._save_cache(df, key)
+            return df
+
+        except Exception as e:
+            print(f"[akshare 历史] 获取失败: {e}")
+            return pd.DataFrame()
+
+    # ──────────────────────────────
+    # 日内分时数据（近 5 天 5 分钟）
+    # ──────────────────────────────
+    def get_intraday_data(self, interval: str = '5m', days: int = 5) -> pd.DataFrame:
+        """获取分时数据（akshare fund_etf_hist_min_em）"""
+        key = f"intraday_{interval}_{days}d"
+
+        if self._cache_valid(key, ttl=60):
+            cached = self._load_cache(key)
+            if cached is not None:
+                return cached
+
+        try:
+            import akshare as ak
+            period_map = {'1m': '1', '5m': '5', '15m': '15', '30m': '30', '60m': '60'}
+            period = period_map.get(interval, '5')
+
+            df = ak.fund_etf_hist_min_em(symbol=self.code, period=period, adjust='qfq')
+
+            if df.empty:
+                raise ValueError("分时数据为空")
+
+            df = df.rename(columns={
+                '时间': 'date',
+                '开盘': 'open',
+                '收盘': 'close',
+                '最高': 'high',
+                '最低': 'low',
+                '成交量': 'volume',
+            })
+            df['date'] = pd.to_datetime(df['date'])
+            df = df.set_index('date')[['open', 'high', 'low', 'close', 'volume']]
+
+            # 只保留最近 N 天
+            cutoff = datetime.now() - timedelta(days=days)
+            df = df[df.index >= cutoff]
+
+            self._save_cache(df, key)
+            return df
+
+        except Exception as e:
+            print(f"[akshare 分时] 获取失败: {e}")
+            return pd.DataFrame()
+
+    # ──────────────────────────────
+    # 基本信息
+    # ──────────────────────────────
+    def get_stock_info(self) -> Dict:
+        """获取 ETF 基本信息"""
+        try:
+            import akshare as ak
+            # ETF 名称 / 规模等
+            df = ak.fund_etf_spot_em()
+            row = df[df['代码'] == self.code]
+            if row.empty:
+                raise ValueError("未找到 ETF 信息")
+
+            r = row.iloc[0]
+            # 尝试获取基金规模（可能字段不存在时用默认值）
+            return {
+                'symbol':        self.symbol,
+                'name':          str(r.get('名称', '科创芯片ETF')),
+                'sector':        '半导体/芯片',
+                'industry':      'ETF基金',
+                'market_cap':    float(r.get('总市值', 0) or 0),
+                'pe_ratio':      0,
+                'pb_ratio':      0,
+                'dividend_yield':0,
+                'avg_volume':    float(r.get('成交量', 0) or 0),
+                '52w_high':      0,
+                '52w_low':       0,
+                'beta':          0,
+            }
+        except Exception as e:
+            print(f"[akshare 基本信息] 获取失败: {e}")
+            return {
+                'symbol':   self.symbol,
+                'name':     '科创芯片ETF (588200)',
+                'sector':   '半导体/芯片',
+                'industry': 'ETF基金',
+            }
+
+    # ──────────────────────────────
+    # 降级兜底
+    # ──────────────────────────────
+    def _fallback(self) -> Dict:
+        return {
+            'symbol':         self.symbol,
+            'price':          0.0,
+            'prev_close':     0.0,
+            'change':         0.0,
+            'change_percent': 0.0,
+            'volume':         0,
+            'high':           0.0,
+            'low':            0.0,
+            'open':           0.0,
+            'timestamp':      datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'error':          '数据获取失败，请检查网络或稍后重试',
+        }
+
+    # 保持旧接口兼容
+    def get_fallback_data(self) -> Dict:
+        return self._fallback()
