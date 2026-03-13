@@ -75,7 +75,7 @@ with st.sidebar:
     st.write(f"**监控股票:** {STOCK_NAME}")
     st.write(f"**股票代码:** {STOCK_SYMBOL}")
     st.write(f"**技术指标:** MACD, RSI, 布林带")
-    st.write(f"**数据源:** Yahoo Finance")
+    st.write(f"**数据源:** AKShare / 东方财富")
     
     if auto_refresh:
         st.write(f"**下次刷新:** {refresh_interval}秒后")
@@ -192,101 +192,119 @@ with col3:
 st.markdown("---")
 st.subheader("🚦 买卖信号分析")
 
+# 初始化 signals 为 None，避免后续区域引用时未定义
+signals = None
+
+# 数据异常提示
+if realtime_data.get('error'):
+    st.warning(f"⚠️ 实时数据提示：{realtime_data.get('error')}")
+
+if realtime_data.get('data_source'):
+    st.caption(f"数据来源: {realtime_data.get('data_source')}")
+
 if not historical_data.empty and realtime_data.get('price', 0) > 0:
     # 生成买卖信号
     with st.spinner("正在分析技术指标..."):
-        signals = signal_generator.generate_signals(
-            historical_data, 
-            realtime_data.get('price', 0)
-        )
+        try:
+            signals = signal_generator.generate_signals(
+                historical_data, 
+                realtime_data.get('price', 0)
+            )
+        except Exception as e:
+            st.error(f"信号生成出错: {e}")
+            signals = signal_generator.get_empty_signals(realtime_data.get('price', 0))
     
-    # 显示信号卡片
-    signal_col1, signal_col2, signal_col3, signal_col4 = st.columns(4)
-    
-    with signal_col1:
-        signal_color = "green" if signals.get('overall_signal') == '买入' else \
-                      "red" if signals.get('overall_signal') == '卖出' else "gray"
+    if signals:
+        # 显示信号卡片
+        signal_col1, signal_col2, signal_col3, signal_col4 = st.columns(4)
         
-        st.metric(
-            label="总体信号",
-            value=signals.get('overall_signal', '中性'),
-            delta=f"强度: {signals.get('signal_strength', 0)}",
-            delta_color=signal_color
-        )
-    
-    with signal_col2:
-        st.metric(
-            label="操作建议",
-            value=signals.get('recommendation', '观望')
-        )
-    
-    with signal_col3:
-        st.metric(
-            label="风险等级",
-            value=signals.get('risk_level', '中等')
-        )
-    
-    with signal_col4:
-        # 信号历史统计
-        signal_stats = signal_generator.get_signals_summary()
-        st.metric(
-            label="历史信号",
-            value=f"{signal_stats.get('total_signals', 0)}"
-        )
-    
-    # 显示信号仪表盘
-    fig_gauge = visualizer.create_signal_gauge(
-        signals.get('signal_strength', 0),
-        signals.get('overall_signal', '中性')
-    )
-    st.plotly_chart(fig_gauge, use_container_width=True)
-    
-    # 显示具体信号
-    st.subheader("🔍 具体技术信号")
-    
-    signal_list = signals.get('signals', [])
-    if signal_list:
-        for signal in signal_list:
-            with st.expander(f"{signal['type']}: {signal['signal']}信号", expanded=False):
-                st.write(f"**置信度:** {signal['confidence']}%")
-                st.write(f"**说明:** {signal['description']}")
-    else:
-        st.info("暂无具体技术信号")
-    
-    # 技术指标状态
-    st.subheader("📊 技术指标状态")
-    
-    indicators = signals.get('indicators', {})
-    if indicators:
-        for indicator_name, indicator_data in indicators.items():
-            with st.expander(f"{indicator_name}", expanded=False):
-                if isinstance(indicator_data, dict):
-                    for key, value in indicator_data.items():
-                        st.write(f"**{key}:** {value}")
-                else:
-                    st.write(indicator_data)
-    else:
-        st.info("技术指标数据不足")
-    
-    # 警报检查
-    if enable_alerts:
-        price_change = abs(realtime_data.get('change_percent', 0))
-        if price_change >= alert_threshold:
-            st.warning(f"⚠️ 价格变动超过阈值: {price_change:.2f}% ≥ {alert_threshold}%")
-            
-            # 发送警报（如果配置了Telegram）
-            if ENABLE_TELEGRAM:
-                notification_manager = NotificationManager()
-                alert_sent = notification_manager.send_alert(
-                    'price_change', 
-                    realtime_data, 
-                    alert_threshold
-                )
-                if alert_sent:
-                    st.success("警报已发送到Telegram")
+        with signal_col1:
+            signal_color = "normal" if signals.get('overall_signal') == '中性' else \
+                          ("off" if signals.get('overall_signal') == '卖出' else "normal")
+            st.metric(
+                label="总体信号",
+                value=signals.get('overall_signal', '中性'),
+                delta=f"强度: {signals.get('signal_strength', 0)}",
+            )
+        
+        with signal_col2:
+            st.metric(
+                label="操作建议",
+                value=signals.get('recommendation', '观望')
+            )
+        
+        with signal_col3:
+            st.metric(
+                label="风险等级",
+                value=signals.get('risk_level', '中等')
+            )
+        
+        with signal_col4:
+            signal_stats = signal_generator.get_signals_summary()
+            st.metric(
+                label="历史信号",
+                value=f"{signal_stats.get('total_signals', 0)}"
+            )
+        
+        # 显示信号仪表盘
+        try:
+            fig_gauge = visualizer.create_signal_gauge(
+                signals.get('signal_strength', 0),
+                signals.get('overall_signal', '中性')
+            )
+            st.plotly_chart(fig_gauge, use_container_width=True)
+        except Exception as e:
+            st.info(f"仪表盘渲染失败: {e}")
+        
+        # 显示具体信号
+        st.subheader("🔍 具体技术信号")
+        
+        signal_list = signals.get('signals', [])
+        if signal_list:
+            for sig in signal_list:
+                with st.expander(f"{sig['type']}: {sig['signal']}信号", expanded=False):
+                    st.write(f"**置信度:** {sig['confidence']}%")
+                    st.write(f"**说明:** {sig['description']}")
+        else:
+            st.info("暂无具体技术信号（数据量不足或市场处于中性区间）")
+        
+        # 技术指标状态
+        st.subheader("📊 技术指标状态")
+        
+        indicators = signals.get('indicators', {})
+        if indicators:
+            for indicator_name, indicator_data in indicators.items():
+                with st.expander(f"{indicator_name}", expanded=False):
+                    if isinstance(indicator_data, dict):
+                        for key, value in indicator_data.items():
+                            st.write(f"**{key}:** {value}")
+                    else:
+                        st.write(indicator_data)
+        else:
+            st.info("技术指标数据不足（需要至少20个交易日数据）")
+        
+        # 警报检查
+        if enable_alerts:
+            price_change = abs(realtime_data.get('change_percent', 0))
+            if price_change >= alert_threshold:
+                st.warning(f"⚠️ 价格变动超过阈值: {price_change:.2f}% ≥ {alert_threshold}%")
+                
+                if ENABLE_TELEGRAM:
+                    notification_manager = NotificationManager()
+                    alert_sent = notification_manager.send_alert(
+                        'price_change', 
+                        realtime_data, 
+                        alert_threshold
+                    )
+                    if alert_sent:
+                        st.success("警报已发送到Telegram")
 else:
-    st.error("数据获取失败，无法生成买卖信号")
-    st.info("请检查网络连接或稍后重试")
+    if historical_data.empty:
+        st.error("❌ 历史数据获取失败，无法生成买卖信号")
+        st.info("💡 可能原因：\n1. 网络连接问题\n2. akshare 版本过旧（运行 `pip install akshare --upgrade`）\n3. 交易时间外数据可能延迟")
+    elif realtime_data.get('price', 0) <= 0:
+        st.warning("⚠️ 实时价格获取失败，无法生成买卖信号")
+        st.info("💡 请检查网络连接或稍后重试")
 
 # 图表区域
 st.markdown("---")
@@ -356,9 +374,12 @@ else:
 st.markdown("---")
 st.subheader("📄 分析报告")
 
-if not historical_data.empty and realtime_data.get('price', 0) > 0:
+if not historical_data.empty and realtime_data.get('price', 0) > 0 and signals is not None:
     # 生成报告
-    report = data_processor.generate_report(realtime_data, signals)
+    try:
+        report = data_processor.generate_report(realtime_data, signals)
+    except Exception as e:
+        report = f"报告生成出错: {e}"
     
     # 显示报告
     with st.expander("查看完整分析报告", expanded=False):
@@ -375,7 +396,7 @@ if not historical_data.empty and realtime_data.get('price', 0) > 0:
         use_container_width=True
     )
 else:
-    st.info("数据不足，无法生成分析报告")
+    st.info("数据不足，无法生成分析报告（请等待数据加载完成）")
 
 # 底部信息
 st.markdown("---")
