@@ -1,6 +1,0 @@
-@echo off
-cd /d "c:\Users\INTEL3\WorkBuddy\Claw"
-echo Renaming branch to main...
-git branch -M main
-echo Pushing to GitHub...
-git push -u origin main
